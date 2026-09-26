@@ -17,7 +17,8 @@ class DocumentTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final sub = subtitle ?? document.summary;
+    final sub = subtitle ??
+        (document.summary == document.group ? '' : document.summary);
     return Card(
       child: ListTile(
         leading: Icon(

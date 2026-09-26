@@ -23,8 +23,8 @@ class HrGuideApp extends StatelessWidget {
       child: MaterialApp(
         title: AppConfig.appName,
         debugShowCheckedModeBanner: false,
-        locale: const Locale('ar', 'EG'),
-        supportedLocales: const [Locale('ar', 'EG')],
+        locale: const Locale('ar'),
+        supportedLocales: const [Locale('ar')],
         localizationsDelegates: const [
           GlobalMaterialLocalizations.delegate,
           GlobalWidgetsLocalizations.delegate,
@@ -40,6 +40,7 @@ class HrGuideApp extends StatelessWidget {
 
   ThemeData _theme(Brightness b) => ThemeData(
         useMaterial3: true,
+        fontFamily: 'Cairo',
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF0F5C8C),
           brightness: b,

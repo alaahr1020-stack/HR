@@ -16,6 +16,7 @@ dependencies:
   shared_preferences: ^2.3.0
   share_plus: ^13.3.0
   path_provider: ^2.1.4
+  scrollable_positioned_list: ^0.3.8
 
 dev_dependencies:
   flutter_test:
@@ -27,3 +28,11 @@ flutter:
   assets:
     - assets/content/
     - assets/forms/
+  fonts:
+    - family: Cairo
+      fonts:
+        - asset: assets/fonts/Cairo-Regular.ttf
+        - asset: assets/fonts/Cairo-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Cairo-Bold.ttf
+          weight: 700

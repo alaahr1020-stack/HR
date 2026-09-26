@@ -46,6 +46,21 @@ class SearchHit {
   });
 }
 
+/// Indices of [doc]'s sections containing every word of [query].
+List<int> searchInDocument(Document doc, String query) {
+  final terms = normalizeArabic(query)
+      .split(RegExp(r'\s+'))
+      .where((t) => t.isNotEmpty)
+      .toList();
+  final out = <int>[];
+  for (var i = 0; i < doc.sections.length; i++) {
+    final s = doc.sections[i];
+    final norm = s.normalized ??= normalizeArabic('${s.title}\n${s.body}');
+    if (terms.every(norm.contains)) out.add(i);
+  }
+  return out;
+}
+
 List<SearchHit> search(Library library, String query, {int limit = 100}) {
   final terms = normalizeArabic(query)
       .split(RegExp(r'\s+'))
@@ -57,7 +72,7 @@ List<SearchHit> search(Library library, String query, {int limit = 100}) {
 
   final hits = <SearchHit>[];
   for (final doc in library.documents) {
-    final title = normalizeArabic(doc.title);
+    final title = doc.normalizedTitle ??= normalizeArabic(doc.title);
     if (matchesAll(title)) {
       hits.add(SearchHit(
         document: doc,
@@ -68,18 +83,25 @@ List<SearchHit> search(Library library, String query, {int limit = 100}) {
     }
     for (var i = 0; i < doc.sections.length; i++) {
       final s = doc.sections[i];
-      final sTitle = normalizeArabic(s.title);
-      final sBody = normalizeArabic(s.body);
-      if (!matchesAll('$sTitle $sBody')) continue;
+      final norm = s.normalized ??= normalizeArabic('${s.title}\n${s.body}');
+      if (!matchesAll(norm)) continue;
+      final nl = norm.indexOf('\n');
+      final titleHit = nl > 0 && matchesAll(norm.substring(0, nl));
       hits.add(SearchHit(
         document: doc,
         sectionIndex: i,
-        snippet: _snippet(s.body, sBody, terms.first),
-        score: matchesAll(sTitle) ? 50 : 10,
+        snippet: _snippet(s.body, normalizeArabic(s.body), terms.first),
+        score: titleHit ? 50 : 10,
       ));
+      if (hits.length > limit * 5) break;
     }
   }
-  hits.sort((a, b) => b.score.compareTo(a.score));
+  // Stable: equal scores keep library order (laws before model regulations).
+  final order = {for (var i = 0; i < hits.length; i++) hits[i]: i};
+  hits.sort((a, b) {
+    final byScore = b.score.compareTo(a.score);
+    return byScore != 0 ? byScore : order[a]!.compareTo(order[b]!);
+  });
   return hits.take(limit).toList();
 }
 

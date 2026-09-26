@@ -3,10 +3,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../models/library.dart';
 import '../services/app_state.dart';
+import '../services/search.dart';
 import '../widgets/banner_ad.dart';
 
 class DocumentScreen extends StatefulWidget {
@@ -35,41 +37,38 @@ class DocumentScreen extends StatefulWidget {
 }
 
 class _DocumentScreenState extends State<DocumentScreen> {
-  late final List<GlobalKey> _keys =
-      List.generate(widget.document.sections.length, (_) => GlobalKey());
+  final _scroll = ItemScrollController();
+  bool _searching = false;
+  String _query = '';
 
-  @override
-  void initState() {
-    super.initState();
-    final i = widget.initialSection;
-    if (i != null && i < _keys.length) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        final ctx = _keys[i].currentContext;
-        if (ctx != null) {
-          Scrollable.ensureVisible(ctx,
-              duration: const Duration(milliseconds: 300));
-        }
-      });
-    }
-  }
+  Document get _doc => widget.document;
+
+  /// Sections to show: all of them, or only in-document search matches.
+  List<int> get _visible => _query.trim().isEmpty
+      ? List.generate(_doc.sections.length, (i) => i)
+      : searchInDocument(_doc, _query);
 
   Future<void> _shareFile() async {
-    final path = widget.document.file!;
+    final path = _doc.file!;
     final data = await rootBundle.load('assets/$path');
     final dir = await getTemporaryDirectory();
-    final out = File('${dir.path}/${path.split('/').last}');
+    final ext = path.split('.').last;
+    final safeName = _doc.title.replaceAll(RegExp(r'[\\/:*?"<>|]'), ' ').trim();
+    final out = File('${dir.path}/$safeName.$ext');
     await out.writeAsBytes(data.buffer.asUint8List(), flush: true);
     await SharePlus.instance.share(ShareParams(
       files: [XFile(out.path)],
-      subject: widget.document.title,
+      subject: _doc.title,
     ));
   }
 
   void _shareText() {
-    final d = widget.document;
+    final text = '${_doc.title}\n\n${_doc.fullText}';
+    // Very long laws are shared as their first part only; messaging apps
+    // truncate huge texts anyway.
     SharePlus.instance.share(ShareParams(
-      text: '${d.title}\n\n${d.fullText}',
-      subject: d.title,
+      text: text.length > 60000 ? '${text.substring(0, 60000)}…' : text,
+      subject: _doc.title,
     ));
   }
 
@@ -77,6 +76,12 @@ class _DocumentScreenState extends State<DocumentScreen> {
     Clipboard.setData(ClipboardData(text: '${s.title}\n${s.body}'));
     ScaffoldMessenger.of(context)
         .showSnackBar(const SnackBar(content: Text('تم النسخ')));
+  }
+
+  void _shareSection(Section s) {
+    SharePlus.instance.share(ShareParams(
+      text: '${_doc.title}\n${s.title}\n\n${s.body}',
+    ));
   }
 
   void _fontDialog() {
@@ -105,36 +110,96 @@ class _DocumentScreenState extends State<DocumentScreen> {
     );
   }
 
+  void _showOutline() {
+    final titled = [
+      for (var i = 0; i < _doc.sections.length; i++)
+        if (_doc.sections[i].title.isNotEmpty) i
+    ];
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.7,
+        builder: (_, controller) => ListView.builder(
+          controller: controller,
+          itemCount: titled.length,
+          itemBuilder: (_, k) {
+            final i = titled[k];
+            final s = _doc.sections[i];
+            return ListTile(
+              dense: true,
+              title: Text(s.title, maxLines: 2, overflow: TextOverflow.ellipsis),
+              subtitle: s.chapter == null ? null : Text(s.chapter!, maxLines: 1),
+              onTap: () {
+                Navigator.pop(ctx);
+                setState(() {
+                  _searching = false;
+                  _query = '';
+                });
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (_scroll.isAttached) _scroll.jumpTo(index: i + 1);
+                });
+              },
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final app = AppScope.of(context);
-    final d = widget.document;
     final theme = Theme.of(context);
+    final visible = _visible;
     return Scaffold(
       appBar: AppBar(
-        title: Text(d.title, maxLines: 2),
+        title: _searching
+            ? TextField(
+                autofocus: true,
+                decoration: const InputDecoration(
+                  hintText: 'ابحث في هذا المستند...',
+                  border: InputBorder.none,
+                ),
+                onChanged: (v) => setState(() => _query = v),
+              )
+            : Text(_doc.title, maxLines: 2, style: const TextStyle(fontSize: 16)),
         actions: [
-          ListenableBuilder(
-            listenable: app.favorites,
-            builder: (_, __) {
-              final fav = app.favorites.contains(d.id);
-              return IconButton(
-                tooltip: fav ? 'إزالة من المفضلة' : 'إضافة للمفضلة',
-                icon: Icon(fav ? Icons.bookmark : Icons.bookmark_border),
-                onPressed: () => app.favorites.toggle(d.id),
-              );
-            },
-          ),
           IconButton(
-            tooltip: 'حجم الخط',
-            icon: const Icon(Icons.format_size),
-            onPressed: _fontDialog,
+            tooltip: _searching ? 'إغلاق البحث' : 'بحث في المستند',
+            icon: Icon(_searching ? Icons.close : Icons.search),
+            onPressed: () => setState(() {
+              _searching = !_searching;
+              _query = '';
+            }),
           ),
-          IconButton(
-            tooltip: 'مشاركة',
-            icon: const Icon(Icons.share_outlined),
-            onPressed: _shareText,
-          ),
+          if (!_searching) ...[
+            ListenableBuilder(
+              listenable: app.favorites,
+              builder: (_, __) {
+                final fav = app.favorites.contains(_doc.id);
+                return IconButton(
+                  tooltip: fav ? 'إزالة من المفضلة' : 'إضافة للمفضلة',
+                  icon: Icon(fav ? Icons.bookmark : Icons.bookmark_border),
+                  onPressed: () => app.favorites.toggle(_doc.id),
+                );
+              },
+            ),
+            PopupMenuButton<String>(
+              onSelected: (v) => switch (v) {
+                'outline' => _showOutline(),
+                'font' => _fontDialog(),
+                _ => _shareText(),
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'outline', child: Text('فهرس المواد')),
+                PopupMenuItem(value: 'font', child: Text('حجم الخط')),
+                PopupMenuItem(value: 'share', child: Text('مشاركة النص')),
+              ],
+            ),
+          ],
         ],
       ),
       bottomNavigationBar: const BannerAdBar(),
@@ -142,69 +207,173 @@ class _DocumentScreenState extends State<DocumentScreen> {
         listenable: app.settings,
         builder: (context, _) {
           final scale = app.settings.fontScale;
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (d.summary.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: Text(d.summary,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                            color: theme.colorScheme.outline)),
-                  ),
-                if (d.file != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: FilledButton.icon(
-                      onPressed: _shareFile,
-                      icon: const Icon(Icons.download_outlined),
-                      label: const Text('حفظ / مشاركة النموذج (Word)'),
-                    ),
-                  ),
-                for (var i = 0; i < d.sections.length; i++)
-                  Card(
-                    key: _keys[i],
-                    color: i == widget.initialSection
-                        ? theme.colorScheme.primaryContainer
-                        : null,
-                    child: InkWell(
-                      onLongPress: () => _copy(d.sections[i]),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (d.sections[i].title.isNotEmpty)
-                              Text(
-                                d.sections[i].title,
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  color: theme.colorScheme.primary,
-                                  fontSize: 16 * scale,
-                                ),
-                              ),
-                            const SizedBox(height: 8),
-                            SelectableText(
-                              d.sections[i].body,
-                              style: TextStyle(fontSize: 15 * scale, height: 1.7),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                const SizedBox(height: 8),
-                Text('اضغط مطولاً على أي فقرة لنسخها',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: theme.colorScheme.outline)),
-              ],
-            ),
+          return ScrollablePositionedList.builder(
+            itemScrollController: _scroll,
+            initialScrollIndex: _query.isEmpty &&
+                    widget.initialSection != null &&
+                    widget.initialSection! < _doc.sections.length
+                ? widget.initialSection! + 1
+                : 0,
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+            itemCount: visible.length + 2,
+            itemBuilder: (context, k) {
+              if (k == 0) return _header(theme, visible.length);
+              if (k == visible.length + 1) {
+                return Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text('اضغط مطولاً على أي فقرة لنسخها أو مشاركتها',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: theme.colorScheme.outline)),
+                );
+              }
+              final i = visible[k - 1];
+              return _SectionCard(
+                section: _doc.sections[i],
+                highlighted: i == widget.initialSection,
+                scale: scale,
+                onCopy: () => _copy(_doc.sections[i]),
+                onShare: () => _shareSection(_doc.sections[i]),
+              );
+            },
           );
         },
       ),
+    );
+  }
+
+  Widget _header(ThemeData theme, int visibleCount) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (_searching && _query.trim().isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Text(
+              visibleCount == 0 ? 'لا توجد نتائج' : '$visibleCount نتيجة',
+              style: TextStyle(color: theme.colorScheme.primary),
+            ),
+          ),
+        if (!_searching && _doc.note != null)
+          Card(
+            color: theme.colorScheme.tertiaryContainer,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.info_outline,
+                      color: theme.colorScheme.onTertiaryContainer),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(_doc.note!,
+                        style: TextStyle(
+                            color: theme.colorScheme.onTertiaryContainer)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        if (!_searching && _doc.file != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: FilledButton.icon(
+              onPressed: _shareFile,
+              icon: const Icon(Icons.download_outlined),
+              label: Text(_doc.file!.endsWith('.xlsx')
+                  ? 'حفظ / مشاركة الملف (Excel)'
+                  : 'حفظ / مشاركة النموذج (Word)'),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _SectionCard extends StatelessWidget {
+  final Section section;
+  final bool highlighted;
+  final double scale;
+  final VoidCallback onCopy;
+  final VoidCallback onShare;
+
+  const _SectionCard({
+    required this.section,
+    required this.highlighted,
+    required this.scale,
+    required this.onCopy,
+    required this.onShare,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (section.chapter != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 16, 8, 4),
+            child: Text(
+              section.chapter!,
+              style: theme.textTheme.titleSmall?.copyWith(
+                color: theme.colorScheme.secondary,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        Card(
+          color: highlighted ? theme.colorScheme.primaryContainer : null,
+          child: InkWell(
+            onLongPress: () => showModalBottomSheet(
+              context: context,
+              builder: (ctx) => SafeArea(
+                child: Wrap(children: [
+                  ListTile(
+                    leading: const Icon(Icons.copy),
+                    title: const Text('نسخ'),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      onCopy();
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.share_outlined),
+                    title: const Text('مشاركة'),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      onShare();
+                    },
+                  ),
+                ]),
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (section.title.isNotEmpty) ...[
+                    Text(
+                      section.title,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.primary,
+                        fontSize: 16 * scale,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  Text(
+                    section.body,
+                    style: TextStyle(fontSize: 15 * scale, height: 1.6),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

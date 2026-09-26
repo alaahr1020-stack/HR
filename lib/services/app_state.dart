@@ -1,11 +1,26 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/library.dart';
 import 'monetization.dart';
+import 'search.dart';
+
+/// Decodes the content and pre-normalizes it for search. Runs in a
+/// background isolate so start-up and the first search stay smooth.
+Library parseLibrary(String raw) {
+  final lib = Library.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+  for (final d in lib.documents) {
+    d.normalizedTitle = normalizeArabic(d.title);
+    for (final s in d.sections) {
+      s.normalized = normalizeArabic('${s.title}\n${s.body}');
+    }
+  }
+  return lib;
+}
 
 class Favorites extends ChangeNotifier {
   static const _key = 'favorites';
@@ -56,7 +71,7 @@ class AppState {
   static Future<AppState> load() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = await rootBundle.loadString('assets/content/library.json');
-    final library = Library.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+    final library = await compute(parseLibrary, raw);
     final monetization = Monetization();
     await monetization.init();
     return AppState(

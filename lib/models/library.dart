@@ -35,11 +35,19 @@ class Section {
   final String title;
   final String body;
 
-  const Section({required this.title, required this.body});
+  /// Enclosing chapter (e.g. "الباب الأول › الفصل الثاني"), set on the first
+  /// section of each chapter only.
+  final String? chapter;
+
+  Section({required this.title, required this.body, this.chapter});
+
+  /// Search-normalized "title body", computed once on first search.
+  String? normalized;
 
   factory Section.fromJson(Map<String, dynamic> j) => Section(
         title: (j['title'] ?? '') as String,
         body: (j['body'] ?? '') as String,
+        chapter: j['chapter'] as String?,
       );
 }
 
@@ -48,19 +56,27 @@ class Document {
   final String categoryId;
   final String title;
   final String summary;
+  final String? group;
+
+  /// Caveat shown above the text (e.g. OCR-extracted content).
+  final String? note;
   final List<Section> sections;
 
   /// Optional attached file (e.g. a Word form) under assets/forms/.
   final String? file;
 
-  const Document({
+  Document({
     required this.id,
     required this.categoryId,
     required this.title,
     required this.summary,
     required this.sections,
+    this.group,
+    this.note,
     this.file,
   });
+
+  String? normalizedTitle;
 
   factory Document.fromJson(Map<String, dynamic> j) => Document(
         id: j['id'] as String,
@@ -70,6 +86,8 @@ class Document {
         sections: ((j['sections'] ?? []) as List)
             .map((s) => Section.fromJson(s as Map<String, dynamic>))
             .toList(),
+        group: j['group'] as String?,
+        note: j['note'] as String?,
         file: j['file'] as String?,
       );
 
@@ -94,6 +112,16 @@ class Library {
 
   List<Document> inCategory(String id) =>
       documents.where((d) => d.categoryId == id).toList();
+
+  /// Groups of a category in first-appearance order; empty when the
+  /// category's documents are not grouped.
+  List<String> groupsOf(String categoryId) {
+    final seen = <String>{};
+    for (final d in documents) {
+      if (d.categoryId == categoryId && d.group != null) seen.add(d.group!);
+    }
+    return seen.toList();
+  }
 
   Category? category(String id) {
     for (final c in categories) {

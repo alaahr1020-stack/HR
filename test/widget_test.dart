@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -10,9 +9,8 @@ import 'package:hr_guide/services/monetization.dart';
 import 'package:hr_guide/services/search.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-Library loadLibrary() => Library.fromJson(jsonDecode(
-        File('assets/content/library.json').readAsStringSync())
-    as Map<String, dynamic>);
+Library loadLibrary() =>
+    parseLibrary(File('assets/content/library.json').readAsStringSync());
 
 void main() {
   test('content file is valid and every document has a known category', () {
@@ -34,7 +32,9 @@ void main() {
   test('search finds sections regardless of letter variants', () {
     final lib = loadLibrary();
     final hits = search(lib, 'انذار');
-    expect(hits.map((h) => h.document.title), contains('نموذج إنذار كتابي'));
+    expect(hits.map((h) => h.document.title), contains('خطاب الإنذار'));
+    final law = lib.documents.firstWhere((d) => d.title.contains('14 لسنة 2025'));
+    expect(searchInDocument(law, 'مادة (79)'), isNotEmpty);
     expect(search(lib, '   '), isEmpty);
   });
 
@@ -50,12 +50,16 @@ void main() {
     await tester.pumpWidget(HrGuideApp(state: state));
     await tester.pumpAndSettle();
 
-    expect(find.text('لائحة الجزاءات'), findsOneWidget);
+    expect(find.text('التشريعات والقرارات'), findsOneWidget);
     expect(find.textContaining('فترة تجريبية'), findsOneWidget);
 
+    await tester.scrollUntilVisible(find.text('نماذج الموارد البشرية'), 100);
     await tester.tap(find.text('نماذج الموارد البشرية'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('نموذج طلب إجازة'));
+    await tester.scrollUntilVisible(find.text('الإجازات وتذاكر السفر'), 200);
+    await tester.tap(find.text('الإجازات وتذاكر السفر'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('طلب الإجازة – بدون مرتب'));
     await tester.pumpAndSettle();
     expect(find.text('حفظ / مشاركة النموذج (Word)'), findsOneWidget);
 
