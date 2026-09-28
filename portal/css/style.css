@@ -99,6 +99,7 @@ label.check input { width: auto; }
 .party-ng { border-top: 3px solid var(--accent); }
 .party-partner { border-top: 3px solid var(--info); }
 .parties .x { align-self: center; color: var(--muted); font-size: 1.2rem; }
+.version { margin: 16px 0 0; text-align: center; font-size: .72rem; color: var(--muted); }
 .demo-note { background: var(--warn-bg); color: var(--warn); padding: 8px 12px; border-radius: 8px; font-size: .88rem; }
 .alert { white-space: pre-line; overflow-wrap: anywhere; background: var(--danger-bg); color: var(--danger); padding: 8px 12px; border-radius: 8px; margin-bottom: 12px; }
 

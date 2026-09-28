@@ -101,6 +101,7 @@ function renderLogin(err) {
             <button class="btn primary" type="submit">دخول</button>
             <button class="link" type="button" id="forgot">نسيت كلمة المرور؟</button>
           </form>`}
+        <p class="version">إصدار ${esc(window.PORTAL_VERSION || 'dev')}</p>
       </div>
     </div>`;
   if (DEMO) {
