@@ -25,6 +25,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+      - name: Stamp version (so browsers load the new files right away)
+        run: |
+          V="${GITHUB_SHA::7}"
+          sed -i -E "s#(from '\./[a-z]+\.js)'#\1?v=$V'#g" portal/js/*.js
+          sed -i -E "s#(js/app\.js|css/style\.css)\"#\1?v=$V\"#g; s#__PORTAL_VERSION__#$V#" portal/index.html
       - uses: actions/upload-pages-artifact@v3
         with:
           path: portal
