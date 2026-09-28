@@ -3,10 +3,12 @@
 // 1) بيانات مشروع Firebase (من Project settings > Your apps > Web app).
 //    لو سبتها فاضية، البورتال بيشتغل "وضع تجريبي" والبيانات بتتحفظ على الجهاز بس.
 export const firebaseConfig = {
-  apiKey: '',
-  authDomain: '',
-  projectId: '',
-  appId: '',
+  apiKey: 'AIzaSyDYxJPbsKT1drSnBrmpwIbZY-8CnGeHAz0',
+  authDomain: 'newgiza-portal.firebaseapp.com',
+  projectId: 'newgiza-portal',
+  storageBucket: 'newgiza-portal.firebasestorage.app',
+  messagingSenderId: '619221708696',
+  appId: '1:619221708696:web:699e2af1b1b7a2d24a45ed',
 };
 
 // شعار نيو جيزة الرسمي: حط الملف في portal/assets واكتب اسمه هنا (مثلاً 'assets/logo.png').

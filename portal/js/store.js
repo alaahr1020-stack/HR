@@ -45,8 +45,11 @@ async function firebaseStore() {
     onAuth(cb) {
       auth.onAuthStateChanged(a, async (u) => {
         if (!u) { me = null; return cb(null); }
-        const snap = await fs.getDoc(fs.doc(db, 'users', u.uid));
-        const p = snap.exists() ? snap.data() : null;
+        let p = null;
+        try {
+          const snap = await fs.getDoc(fs.doc(db, 'users', u.uid));
+          p = snap.exists() ? snap.data() : null;
+        } catch (_) { /* قواعد الحماية بترفض القراءة لو الحساب مش متفعّل */ }
         if (!p || !p.active) {
           await auth.signOut(a);
           return cb(null, 'الحساب ده مش متفعّل على البورتال. كلّم مسؤول البورتال.');
