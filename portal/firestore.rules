@@ -1,0 +1,55 @@
+rules_version = '2';
+
+// قواعد الحماية: البيانات متاحة بس للمستخدمين المسجّلين في مجموعة users وحالتهم active = true
+// (يعني طرفين بس: نيو جيزة والشركة). السجل (events) مينفعش يتعدّل أو يتمسح.
+service cloud.firestore {
+  match /databases/{db}/documents {
+    function profile() {
+      return get(/databases/$(db)/documents/users/$(request.auth.uid)).data;
+    }
+    function active() {
+      return request.auth != null
+        && exists(/databases/$(db)/documents/users/$(request.auth.uid))
+        && profile().active == true
+        && profile().side in ['ng', 'partner'];
+    }
+    function validStatus(s) {
+      return s in ['new', 'delivered', 'in_progress', 'submitted', 'needs_info', 'done', 'rejected'];
+    }
+
+    // المستخدمين بيتضافوا من Firebase Console بس.
+    match /users/{uid} {
+      allow read: if active();
+      allow write: if false;
+    }
+
+    match /counters/requests {
+      allow read: if active();
+      allow create: if active() && request.resource.data.n == 1;
+      allow update: if active() && request.resource.data.n == resource.data.n + 1;
+    }
+
+    match /requests/{id} {
+      allow read: if active();
+      allow create: if active()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.createdBySide == profile().side
+        && validStatus(request.resource.data.status);
+      allow update: if active()
+        && validStatus(request.resource.data.status)
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['formType', 'employeeName', 'nationalId', 'insuranceNo', 'school', 'jobTitle',
+                       'eventDate', 'pages', 'docsLink', 'notes', 'status', 'insuranceRef',
+                       'updatedAt', 'deliveredAt', 'submittedAt', 'completedAt']);
+      allow delete: if false;
+
+      match /events/{eventId} {
+        allow read: if active();
+        allow create: if active()
+          && request.resource.data.by == request.auth.uid
+          && request.resource.data.side == profile().side;
+        allow update, delete: if false;
+      }
+    }
+  }
+}

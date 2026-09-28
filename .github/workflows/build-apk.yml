@@ -2,6 +2,7 @@ name: Build Android app
 
 on:
   push:
+    paths-ignore: ['portal/**', '.github/workflows/deploy-portal.yml']
   workflow_dispatch:
 
 jobs:
