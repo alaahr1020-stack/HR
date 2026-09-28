@@ -100,7 +100,7 @@ label.check input { width: auto; }
 .party-partner { border-top: 3px solid var(--info); }
 .parties .x { align-self: center; color: var(--muted); font-size: 1.2rem; }
 .demo-note { background: var(--warn-bg); color: var(--warn); padding: 8px 12px; border-radius: 8px; font-size: .88rem; }
-.alert { background: var(--danger-bg); color: var(--danger); padding: 8px 12px; border-radius: 8px; margin-bottom: 12px; }
+.alert { white-space: pre-line; overflow-wrap: anywhere; background: var(--danger-bg); color: var(--danger); padding: 8px 12px; border-radius: 8px; margin-bottom: 12px; }
 
 /* tiles */
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }
