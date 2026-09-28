@@ -41,11 +41,11 @@ python3 -m http.server 8000
    | `side` | string | `ng` لموظفي نيو جيزة، أو `partner` لموظفي الشركة |
    | `active` | boolean | `true` (وخليها `false` عشان توقف حد) |
 
-7. **Authentication ← Settings ← Authorized domains**: أضف الدومين اللي هترفع عليه البورتال.
+7. **Authentication ← Settings ← Authorized domains**: أضف الدومين اللي هترفع عليه البورتال (مع GitHub Pages هيبقى `alaahr1020-stack.github.io`).
 
 ## الرفع على الإنترنت
 
-- **GitHub Pages**: الـ workflow الموجود في `.github/workflows/deploy-portal.yml` بيرفع فولدر `portal` لوحده مع كل دمج على `main`. فعّله من Settings ← Pages ← Source: **GitHub Actions**.
+- **GitHub Pages**: الـ workflow الموجود في `.github/workflows/deploy-portal.yml` بيرفع فولدر `portal` لوحده مع كل دمج على الفرع الرئيسي للريبو. فعّله من Settings ← Pages ← Source: **GitHub Actions**.
 - أو **Firebase Hosting**: من جوه فولدر `portal` شغّل `firebase deploy` (الملف `firebase.json` جاهز).
 
 > ملفات `firebaseConfig` مش سرية، والحماية كلها في `firestore.rules` وفي إن مفيش حد يقدر يدخل غير اللي انت ضفته.
