@@ -52,6 +52,7 @@ function shell(active, body) {
     ['#/', 'لوحة المتابعة', 'home'],
     ['#/requests', 'المعاملات', 'list'],
     ['#/new', 'معاملة جديدة', 'new'],
+    ['#/import', 'رفع من Excel', 'import'],
   ].map(([h, l, k]) => `<a href="${h}" class="${active === k ? 'on' : ''}">${l}</a>`).join('');
   return `
     ${DEMO ? `<div class="demo-bar">وضع تجريبي — البيانات محفوظة على الجهاز ده بس. اربط Firebase من <code>js/config.js</code> عشان الطرفين يشوفوا نفس البيانات. <button class="link" id="demo-reset">إعادة البيانات التجريبية</button></div>` : ''}
@@ -227,6 +228,7 @@ function renderList(params) {
       <div class="actions">
         <button class="btn" id="csv">تصدير Excel (CSV)</button>
         <button class="btn" id="handover" disabled>طباعة كشف تسليم (<span id="sel-n">0</span>)</button>
+        <a class="btn" href="#/import">⬆ رفع من Excel</a>
         <a class="btn primary" href="#/new">+ معاملة جديدة</a>
       </div>
     </div>
@@ -274,11 +276,17 @@ function exportCsv(rows) {
   ];
   const cell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const csv = '﻿' + [cols.map((c) => cell(c[0])).join(','), ...rows.map((r) => cols.map((c) => cell(c[1](r))).join(','))].join('\r\n');
+  saveBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), `NewGiza-insurance-${new Date().toISOString().slice(0, 10)}.csv`);
+}
+
+function saveBlob(blob, name) {
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-  a.download = `معاملات-التأمينات-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(a.href);
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
 // ------------------------------------------------------------------ new / edit
@@ -461,6 +469,251 @@ function renderDetail(id) {
   unsubView.push(store.watchEvents(id, (x) => { events = x; draw(); }));
 }
 
+// ------------------------------------------------------------------ Excel import
+const XLSX_URL = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+let xlsxLoading = null;
+function loadXlsx() {
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  xlsxLoading ||= new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = XLSX_URL;
+    s.onload = () => resolve(window.XLSX);
+    s.onerror = () => { xlsxLoading = null; reject(new Error('xlsx')); };
+    document.head.appendChild(s);
+  });
+  return xlsxLoading;
+}
+
+// أعمدة الشيت: [المفتاح, العنوان في القالب, أسماء تانية مقبولة]
+const IMPORT_COLS = [
+  ['employeeName', 'اسم الموظف', ['الاسم', 'اسم العامل', 'الموظف', 'name']],
+  ['nationalId', 'الرقم القومي', ['رقم قومي', 'national id']],
+  ['insuranceNo', 'الرقم التأميني', ['رقم تأميني', 'الرقم التاميني', 'insurance no']],
+  ['formType', 'نوع النموذج', ['النموذج', 'الاستمارة', 'رقم الاستمارة', 'form']],
+  ['school', 'المدرسة / الجهة', ['المدرسة', 'الجهة', 'school']],
+  ['jobTitle', 'الوظيفة', ['job']],
+  ['eventDate', 'تاريخ الحدث', ['التاريخ', 'تاريخ التعيين', 'تاريخ الانتهاء', 'date']],
+  ['pages', 'عدد الأوراق', ['عدد المرفقات']],
+  ['status', 'الحالة', ['status']],
+  ['insuranceRef', 'رقم الإيصال / القيد', ['رقم الايصال', 'رقم القيد']],
+  ['docsLink', 'رابط المستندات', ['رابط', 'link']],
+  ['notes', 'ملاحظات', ['ملاحظه', 'notes']],
+];
+
+const normAr = (s) => String(s ?? '').trim().toLowerCase()
+  .replace(/[ً-ْـ]/g, '')
+  .replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي')
+  .replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d))
+  .replace(/[\s/\\\-_—–:.()]+/g, ' ').trim();
+
+function matchColumn(header) {
+  const h = normAr(header);
+  if (!h) return null;
+  for (const [key, title, alts] of IMPORT_COLS) {
+    if ([title, ...alts].some((x) => normAr(x) === h)) return key;
+  }
+  return null;
+}
+
+function matchForm(v) {
+  const t = normAr(v);
+  if (!t) return null;
+  const byId = FORM_TYPES.find((f) => f.id === t);
+  if (byId) return byId.id;
+  const byLabel = FORM_TYPES.find((f) => normAr(f.label) === t || normAr(f.label).startsWith(t + ' ') || normAr(f.label).includes(t));
+  if (byLabel && t.length > 2) return byLabel.id;
+  const num = t.match(/^(?:استماره|نموذج)?\s*(\d+)$/);
+  if (num) return (FORM_TYPES.find((f) => f.id === 'form' + num[1]) || {}).id || null;
+  return null;
+}
+
+function matchStatus(v) {
+  const t = normAr(v);
+  if (!t) return null;
+  const s = STATUSES.find((x) => x.id === t || normAr(x.label) === t || normAr(x.label).includes(t));
+  return s ? s.id : null;
+}
+
+function cellText(v) {
+  if (v instanceof Date) {
+    const d = new Date(v.getTime() - v.getTimezoneOffset() * 60000);
+    return d.toISOString().slice(0, 10);
+  }
+  return String(v ?? '').trim();
+}
+
+function parseRows(rows, defaultStatus) {
+  const headerIdx = rows.findIndex((r) => r.filter((c) => matchColumn(c)).length >= 2);
+  if (headerIdx < 0) return { error: 'مش لاقي صف العناوين في الشيت. استخدم القالب، أو خلي أول صف فيه عناوين زي "اسم الموظف" و"نوع النموذج".' };
+  const map = rows[headerIdx].map(matchColumn);
+  if (!map.includes('employeeName') || !map.includes('formType')) {
+    return { error: 'لازم الشيت يكون فيه عمود "اسم الموظف" وعمود "نوع النموذج" على الأقل.' };
+  }
+  const openKeys = new Set(requests.filter(isOpen).map((r) => `${r.nationalId}|${r.formType}`));
+  const seen = new Set();
+  const out = [];
+  rows.slice(headerIdx + 1).forEach((r, i) => {
+    const raw = {};
+    map.forEach((k, c) => { if (k) raw[k] = cellText(r[c]); });
+    if (!Object.values(raw).some(Boolean)) return;
+    const errors = [];
+    const warnings = [];
+    const data = {};
+    for (const [k] of IMPORT_COLS) data[k] = raw[k] || '';
+    data.nationalId = data.nationalId.replace(/\D/g, '');
+    const form = matchForm(raw.formType);
+    if (!data.employeeName) errors.push('اسم الموظف ناقص');
+    if (!form) errors.push(raw.formType ? `نوع النموذج "${raw.formType}" مش معروف` : 'نوع النموذج ناقص');
+    else data.formType = form;
+    if (data.nationalId && data.nationalId.length !== 14) errors.push('الرقم القومي لازم 14 رقم');
+    if (data.docsLink && !safeUrl(data.docsLink)) errors.push('الرابط لازم يبدأ بـ https://');
+    if (raw.status) {
+      const st = matchStatus(raw.status);
+      if (!st) errors.push(`الحالة "${raw.status}" مش معروفة`);
+      else data.status = st;
+    } else data.status = defaultStatus;
+    if (!data.school) warnings.push('المدرسة مش مكتوبة');
+    const key = `${data.nationalId}|${data.formType}`;
+    if (data.nationalId && form) {
+      if (openKeys.has(key)) warnings.push('فيه معاملة مفتوحة بنفس الرقم القومي والنموذج');
+      if (seen.has(key)) warnings.push('متكرر في الشيت');
+      seen.add(key);
+    }
+    out.push({ line: headerIdx + i + 2, data, errors, warnings });
+  });
+  return { rows: out };
+}
+
+async function downloadTemplate() {
+  let XLSX;
+  try { XLSX = await loadXlsx(); } catch (_) { return toast('تعذّر تحميل مكتبة Excel. اتأكد من الإنترنت.', true); }
+  const head = IMPORT_COLS.map((c) => c[1]);
+  const sample = ['أحمد محمد علي', '29001011234567', '', 'استمارة 1', SCHOOLS[1] || SCHOOLS[0] || '', 'مدرس', '2026-09-01', '3', '', '', '', ''];
+  const ws = XLSX.utils.aoa_to_sheet([head, sample]);
+  ws['!cols'] = head.map((h) => ({ wch: Math.max(14, h.length + 4) }));
+  ws['!views'] = [{ RTL: true }];
+  const help = XLSX.utils.aoa_to_sheet([
+    ['أنواع النماذج (اكتب أي واحد منهم في عمود "نوع النموذج")'],
+    ...FORM_TYPES.map((f) => [f.label]),
+    [''],
+    ['ممكن تكتب اختصار زي: استمارة 1 / استمارة 2 / استمارة 6'],
+    [''],
+    ['الحالات (عمود "الحالة" اختياري)'],
+    ...STATUSES.map((s) => [s.label]),
+    [''],
+    ['المدارس'],
+    ...allSchools().map((s) => [s]),
+  ]);
+  help['!cols'] = [{ wch: 55 }];
+  const wb = XLSX.utils.book_new();
+  wb.Workbook = { Views: [{ RTL: true }] };
+  XLSX.utils.book_append_sheet(wb, ws, 'المعاملات');
+  XLSX.utils.book_append_sheet(wb, help, 'القوائم');
+  const out = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+  saveBlob(new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), 'NewGiza-insurance-template.xlsx');
+}
+
+function renderImport() {
+  document.title = 'رفع من Excel — بورتال نيو جيزة';
+  let parsed = null;
+  app.innerHTML = shell('import', `
+    <div class="page-head"><h1>رفع معاملات من Excel</h1></div>
+    <section class="card">
+      <ol class="steps">
+        <li>نزّل القالب واملاه: كل صف معاملة واحدة. العمودين المطلوبين بس: <b>اسم الموظف</b> و<b>نوع النموذج</b>.</li>
+        <li>ارفع الملف هنا (Excel أو CSV). تقدر كمان ترفع شيت عندك بالفعل لو عناوين أعمدته قريبة من القالب.</li>
+        <li>راجع المعاينة، وبعدين دوس <b>تسجيل</b>.</li>
+      </ol>
+      <div class="actions">
+        <button class="btn" id="tpl">⬇ تنزيل القالب</button>
+        <label class="btn primary file-btn">⬆ اختيار ملف Excel<input type="file" id="file" accept=".xlsx,.xls,.csv" hidden></label>
+        <label class="check"><input type="checkbox" id="imp-delivered"> الورق اتسلّم للشركة (الحالة الافتراضية "تم التسليم للشركة")</label>
+      </div>
+      <div id="drop" class="drop">أو اسحب الملف وحطه هنا</div>
+    </section>
+    <section id="preview"></section>`);
+  bindShell();
+
+  const defaultStatus = () => ($('#imp-delivered').checked ? 'delivered' : 'new');
+
+  const draw = () => {
+    const box = $('#preview');
+    if (!parsed) { box.innerHTML = ''; return; }
+    if (parsed.error) { box.innerHTML = `<div class="card"><div class="alert">${esc(parsed.error)}</div></div>`; return; }
+    const ok = parsed.rows.filter((r) => !r.errors.length);
+    const bad = parsed.rows.length - ok.length;
+    box.innerHTML = `
+      <section class="card">
+        <div class="page-head">
+          <h2>المعاينة: ${parsed.rows.length} صف — <span class="ok-n">${ok.length} جاهز</span>${bad ? ` · <span class="bad-n">${bad} فيه أخطاء ومش هيتسجل</span>` : ''}</h2>
+          <button class="btn primary" id="do-import" ${ok.length ? '' : 'disabled'}>تسجيل ${ok.length} معاملة</button>
+        </div>
+        <div class="progress" id="prog" hidden><i></i><span></span></div>
+        <div class="tbl-wrap"><table class="tbl">
+          <thead><tr><th>صف</th><th>الموظف</th><th>الرقم القومي</th><th>النموذج</th><th>الجهة</th><th>الحالة</th><th>ملاحظات المراجعة</th></tr></thead>
+          <tbody>${parsed.rows.map((r) => `
+            <tr class="${r.errors.length ? 'row-bad' : ''}">
+              <td>${r.line}</td>
+              <td>${esc(r.data.employeeName || '—')}</td>
+              <td dir="ltr">${esc(r.data.nationalId)}</td>
+              <td>${r.data.formType && FORM_TYPES.some((f) => f.id === r.data.formType) ? esc(formOf(r.data.formType).label) : '—'}</td>
+              <td>${esc(r.data.school || '—')}</td>
+              <td>${r.data.status ? badge(r.data.status) : '—'}</td>
+              <td>${r.errors.map((e) => `<div class="msg-bad">✖ ${esc(e)}</div>`).join('')}${r.warnings.map((w) => `<div class="msg-warn">⚠ ${esc(w)}</div>`).join('')}${!r.errors.length && !r.warnings.length ? '<span class="msg-ok">✔</span>' : ''}</td>
+            </tr>`).join('')}</tbody>
+        </table></div>
+      </section>`;
+    const btn = $('#do-import');
+    if (btn) btn.onclick = () => runImport(ok);
+  };
+
+  const runImport = async (rows) => {
+    if (!confirm(`هيتسجل ${rows.length} معاملة. متأكد؟`)) return;
+    const btn = $('#do-import');
+    btn.disabled = true;
+    const prog = $('#prog');
+    prog.hidden = false;
+    let done = 0;
+    let failed = 0;
+    for (const r of rows) {
+      const data = { ...r.data };
+      for (const k of Object.keys(data)) if (data[k] === '') delete data[k];
+      try { await store.createRequest(data); done++; } catch (err) { console.error(err); failed++; }
+      const pct = Math.round(((done + failed) / rows.length) * 100);
+      prog.querySelector('i').style.width = pct + '%';
+      prog.querySelector('span').textContent = `${done + failed} / ${rows.length}`;
+    }
+    toast(failed ? `اتسجل ${done} ومعرفناش نسجل ${failed}` : `اتسجلت ${done} معاملة`, !!failed);
+    filters.q = ''; filters.status = ''; filters.form = ''; filters.school = ''; filters.open = false;
+    location.hash = '#/requests';
+  };
+
+  const readFile = async (file) => {
+    if (!file) return;
+    let XLSX;
+    try { XLSX = await loadXlsx(); } catch (_) { return toast('تعذّر تحميل مكتبة Excel. اتأكد من الإنترنت.', true); }
+    try {
+      const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: '' });
+      parsed = parseRows(rows, defaultStatus());
+    } catch (err) {
+      console.error(err);
+      parsed = { error: 'مش قادر أقرا الملف ده. اتأكد إنه ملف Excel (.xlsx) أو CSV.' };
+    }
+    parsed.file = file;
+    draw();
+  };
+
+  $('#tpl').onclick = downloadTemplate;
+  $('#file').onchange = (e) => readFile(e.target.files[0]);
+  $('#imp-delivered').onchange = () => { if (parsed && parsed.file) readFile(parsed.file); };
+  const drop = $('#drop');
+  drop.ondragover = (e) => { e.preventDefault(); drop.classList.add('over'); };
+  drop.ondragleave = () => drop.classList.remove('over');
+  drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove('over'); readFile(e.dataTransfer.files[0]); };
+}
+
 // ------------------------------------------------------------------ print
 function printDoc(title, body) {
   const w = window.open('', '_blank');
@@ -516,6 +769,7 @@ function route() {
   if (!parts.length) return renderDashboard();
   if (parts[0] === 'requests') return renderList(params);
   if (parts[0] === 'new') return renderForm(null);
+  if (parts[0] === 'import') return renderImport();
   if (parts[0] === 'handover') return renderHandover();
   if (parts[0] === 'r' && parts[1] && parts[2] === 'edit') {
     let done = false;

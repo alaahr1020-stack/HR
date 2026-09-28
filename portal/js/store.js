@@ -3,6 +3,14 @@ import { firebaseConfig } from './config.js';
 
 export const DEMO = !firebaseConfig.apiKey;
 
+// لما معاملة تتسجل على مرحلة متقدمة (مثلاً من Excel)، نسجل تواريخ المراحل اللي عدّت.
+function stampsFor(status, t) {
+  const order = ['delivered', 'submitted', 'done'];
+  const reached = { delivered: 1, in_progress: 1, submitted: 2, needs_info: 2, done: 3 }[status] || 0;
+  const keys = { delivered: 'deliveredAt', submitted: 'submittedAt', done: 'completedAt' };
+  return Object.fromEntries(order.slice(0, reached).map((s) => [keys[s], t]));
+}
+
 const FB = 'https://www.gstatic.com/firebasejs/10.12.2/';
 
 function refNumber(n, date = new Date()) {
@@ -103,7 +111,7 @@ async function firebaseStore() {
           createdBySide: me.side,
           createdAt: fs.serverTimestamp(),
           updatedAt: fs.serverTimestamp(),
-          ...(data.status === 'delivered' ? { deliveredAt: fs.serverTimestamp() } : {}),
+          ...stampsFor(data.status, fs.serverTimestamp()),
         });
       });
       await addEvent(reqRef.id, { type: 'created', to: data.status || 'new' });
@@ -252,7 +260,7 @@ function demoStore() {
       data.requests.push({
         ...fields, id, ref: refNumber(data.counter), status,
         createdBy: me.uid, createdByName: me.name, createdBySide: me.side,
-        createdAt: now(), updatedAt: now(), ...(status === 'delivered' ? { deliveredAt: now() } : {}),
+        createdAt: now(), updatedAt: now(), ...stampsFor(status, now()),
       });
       this._event(id, { type: 'created', to: status });
       save();

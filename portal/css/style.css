@@ -194,3 +194,19 @@ label.check input { width: auto; }
   .dl { grid-template-columns: 1fr; }
   .bar-row { grid-template-columns: 110px 1fr 30px; }
 }
+
+/* Excel import */
+.steps { margin: 0 0 14px; padding-inline-start: 20px; }
+.steps li { margin-bottom: 4px; }
+.file-btn { flex-direction: row; font-weight: 600; }
+.drop { margin-top: 14px; border: 2px dashed var(--border); border-radius: var(--radius); padding: 22px; text-align: center; color: var(--muted); }
+.drop.over { border-color: var(--brand); background: var(--surface-2); color: var(--brand); }
+.ok-n { color: var(--success); }
+.bad-n { color: var(--danger); }
+.row-bad td { background: var(--danger-bg); }
+.msg-bad { color: var(--danger); font-size: .82rem; }
+.msg-warn { color: var(--warn); font-size: .82rem; }
+.msg-ok { color: var(--success); }
+.progress { position: relative; height: 22px; background: var(--surface-2); border-radius: 99px; overflow: hidden; margin-bottom: 12px; }
+.progress i { position: absolute; inset-block: 0; inset-inline-start: 0; width: 0; background: var(--brand); transition: width .2s; }
+.progress span { position: relative; display: block; text-align: center; font-size: .8rem; line-height: 22px; font-weight: 700; mix-blend-mode: difference; color: #fff; }
