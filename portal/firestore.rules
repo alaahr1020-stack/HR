@@ -19,7 +19,8 @@ service cloud.firestore {
 
     // المستخدمين بيتضافوا من Firebase Console بس.
     match /users/{uid} {
-      allow read: if active();
+      // كل مستخدم يقدر يقرا بياناته هو، عشان البورتال يعرف يقوله لو فيه مشكلة في حسابه.
+      allow read: if active() || (request.auth != null && request.auth.uid == uid);
       allow write: if false;
     }
 

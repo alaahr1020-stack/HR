@@ -46,13 +46,22 @@ async function firebaseStore() {
       auth.onAuthStateChanged(a, async (u) => {
         if (!u) { me = null; return cb(null); }
         let p = null;
+        let problem = '';
         try {
           const snap = await fs.getDoc(fs.doc(db, 'users', u.uid));
-          p = snap.exists() ? snap.data() : null;
-        } catch (_) { /* قواعد الحماية بترفض القراءة لو الحساب مش متفعّل */ }
-        if (!p || !p.active) {
+          if (!snap.exists()) problem = `مفيش مستند في مجموعة users اسمه (Document ID) نفس الـ UID ده:\n${u.uid}`;
+          else {
+            p = snap.data();
+            if (p.active !== true) problem = 'الحقل active لازم يكون نوعه boolean وقيمته true (مش كلمة "true" نوعها string).';
+            else if (!['ng', 'partner'].includes(p.side)) problem = 'الحقل side لازم يكون ng أو partner بالظبط (حروف صغيرة ومن غير مسافات).';
+          }
+        } catch (err) {
+          console.error(err);
+          problem = 'قواعد الحماية (Rules) في Firestore مش منشورة بالنسخة الأخيرة. انسخ ملف firestore.rules والصقه في Firestore ← Rules ← Publish.';
+        }
+        if (problem) {
           await auth.signOut(a);
-          return cb(null, 'الحساب ده مش متفعّل على البورتال. كلّم مسؤول البورتال.');
+          return cb(null, `الحساب ده مش متفعّل على البورتال.\n${problem}`);
         }
         me = { uid: u.uid, email: u.email, name: p.name || u.email, side: p.side };
         cb(me);
