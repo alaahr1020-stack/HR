@@ -153,7 +153,7 @@ function demoStore() {
   function seed() {
     const d = (days) => new Date(Date.now() - days * 864e5).toISOString();
     const ng = { by: 'demo-ng', byName: 'شئون العاملين — نيو جيزة', side: 'ng' };
-    const pt = { by: 'demo-partner', byName: 'مسؤول التأمينات — الشركة', side: 'partner' };
+    const pt = { by: 'demo-partner', byName: 'مسؤول التأمينات — بروسيرف', side: 'partner' };
     const rows = [
       ['form1', 'أحمد محمود سالم', '29001011234567', '', 'مدرسة (1)', 'done', 20],
       ['form6', 'منى عبد الرحمن علي', '28805052345678', '1234567', 'مدرسة (2)', 'submitted', 9],
@@ -202,7 +202,7 @@ function demoStore() {
       me = side ? {
         uid: 'demo-' + side,
         email: side + '@demo',
-        name: side === 'ng' ? 'شئون العاملين — نيو جيزة' : 'مسؤول التأمينات — الشركة',
+        name: side === 'ng' ? 'شئون العاملين — نيو جيزة' : 'مسؤول التأمينات — بروسيرف',
         side,
       } : null;
       authCb(me);

@@ -81,8 +81,13 @@ function renderLogin(err) {
     <div class="login-wrap">
       <div class="login-card">
         ${brand()}
+        <div class="parties">
+          <span class="party party-ng"><b>${esc(SIDES.ng.short)}</b><small>إدارة المدارس</small></span>
+          <span class="x">×</span>
+          <span class="party party-partner"><b>${esc(SIDES.partner.short)}</b><small>شركة التأمينات</small></span>
+        </div>
         <h1>متابعة معاملات التأمينات الاجتماعية</h1>
-        <p class="muted">بورتال مشترك بين ${esc(SIDES.ng.name)} و${esc(SIDES.partner.name)} لمتابعة كل الاستمارات والنماذج من التسليم لحد التسجيل.</p>
+        <p class="muted">بورتال مشترك بين ${esc(SIDES.ng.short)} و${esc(SIDES.partner.short)} بس، لمتابعة كل الاستمارات والنماذج من التسليم لحد التسجيل.</p>
         ${err ? `<div class="alert">${esc(err)}</div>` : ''}
         ${DEMO ? `
           <p class="demo-note">وضع تجريبي: اختار الطرف اللي عايز تدخل بيه.</p>
